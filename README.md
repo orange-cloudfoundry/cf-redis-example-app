@@ -1,4 +1,4 @@
-# CF Redis Example App [![Build Status](
+# CF Redis Example App
 
 This app is an example of how you can consume a Cloud Foundry service within an app.
 
