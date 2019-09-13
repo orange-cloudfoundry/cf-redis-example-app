@@ -8,7 +8,7 @@ It allows you to set, get and delete Redis key/value pairs using RESTful endpoin
 
 #### Using Redis service
 
-Install the app by pushing it to your Cloud Foundry and binding with the edis service
+Install the app by pushing it to your Cloud Foundry and binding with the redis service
 
 Example:
 
