@@ -27,6 +27,30 @@ put '/:key' do
   end
 end
 
+
+put '/tls/v1/:key' do
+  set_key_with_tls_version('TLSv1', params)
+end
+
+put '/tls/v1.2/:key' do
+  set_key_with_tls_version('TLSv1_2', params)
+end
+
+# Not yet su
+
+def set_key_with_tls_version(version, params)
+  data = params[:data]
+  if data
+    key = params[:key]
+    redis_client_tls(version).set(key, data)
+    status 201
+    body 'success'
+  else
+    status 400
+    body 'data field missing'
+  end
+end
+
 get '/:key' do
   value = redis_client.get(params[:key])
   if value
@@ -127,7 +151,7 @@ def redis_client_tls(version='TLSv1')
 end
 
 def redis_client
-    tls_enabled = ENV['tls_enabled'] || false
+    tls_enabled = ENV['tls_enabled'] || true
 
     if tls_enabled
       @client ||= Redis.new(
