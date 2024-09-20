@@ -1,6 +1,8 @@
 require 'sinatra'
 require 'redis'
 require 'cf-app-utils'
+require_relative 'redis_tls'
+require_relative 'client'
 
 before do
   unless redis_credentials
@@ -37,6 +39,11 @@ get '/:key' do
   end
 end
 
+get '/status/health' do
+  status 200
+  body 'app is running'
+end
+
 get '/config/:item' do
   unless params[:item]
     status 400
@@ -58,7 +65,7 @@ end
 delete '/:key' do
   result = redis_client.del(params[:key])
   if result > 0
-    status 200
+    status 410 
     body 'success'
   else
     status 404
@@ -78,6 +85,10 @@ get '/tls/v1.2/:key' do
   get_key_with_tls_version(params[:key], 'TLSv1_2')
 end
 
+get '/tls/v1.3/:key' do
+  get_key_with_tls_version(params[:key], 'TLSv1_3')
+end
+
 def get_key_with_tls_version(key, version)
   begin
     value = redis_client_tls(version).get(key)
@@ -95,38 +106,34 @@ def get_key_with_tls_version(key, version)
 end
 
 def redis_client_tls(version='TLSv1')
-  @client ||= Redis.new(
-    host: redis_credentials.fetch('host'),
-    port: redis_credentials.fetch('tls_port'),
-    password: redis_credentials.fetch('password'),
-    ssl: true,
-    ssl_params: {
-      ssl_version: version,
-      verify_mode: OpenSSL::SSL::VERIFY_NONE
-    },
-    timeout: 30
-  )
+  if redis_credentials.key?('sentinels')
+      @client ||= ClientRedis.tls_using_sentinel(redis_credentials, version)
+  else
+    if version == 'TLSv1_3'
+      return @client_tls_13 ||= RedisTLS13.new(
+        host: redis_credentials.fetch('host'),
+        port: redis_credentials.fetch('tls_port'),
+        password: redis_credentials.fetch('password')
+      )
+    end
+    @client ||= ClientRedis.tls(redis_credentials, version)
+  end
 end
 
 def redis_client
-    tls_enabled = ENV['tls_enabled'] || false
+  tls_enabled = ENV['tls_enabled'] || false
 
+  if redis_credentials.key?('sentinels')
     if tls_enabled
-      @client ||= Redis.new(
-        host: redis_credentials.fetch('host'),
-        port: redis_credentials.fetch('tls_port'),
-        password: redis_credentials.fetch('password'),
-        ssl: true,
-        timeout: 30
-      )
+      @client ||= ClientRedis.tls_using_sentinel(redis_credentials, version='TLSv1_2')
     else
-      @client ||= Redis.new(
-        host: redis_credentials.fetch('host'),
-        port: redis_credentials.fetch('port'),
-        password: redis_credentials.fetch('password'),
-        timeout: 30
-      )
+      @client ||= ClientRedis.using_sentinel(redis_credentials)
     end
+  elsif tls_enabled
+    @client ||= ClientRedis.tls(redis_credentials)
+  else
+    @client ||= ClientRedis.default(redis_credentials)
+  end
 end
 
 def redis_credentials
