@@ -1,5 +1,5 @@
 source 'https://rubygems.org'
-
+ruby '> 3.0.0'
 gem 'cf-app-utils'
 gem 'sinatra', "3.0.6"
 gem 'redis'
