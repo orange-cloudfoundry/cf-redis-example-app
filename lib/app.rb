@@ -65,7 +65,7 @@ end
 delete '/:key' do
   result = redis_client.del(params[:key])
   if result > 0
-    status 410 
+    status 200
     body 'success'
   else
     status 404
