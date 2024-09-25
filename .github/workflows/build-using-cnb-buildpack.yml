@@ -1,0 +1,130 @@
+name: "Build using cnb buildpack"
+permissions:
+  packages: write
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - "v?[0-9]+.[0-9]+.[0-9]+*"
+env:
+  CNB_IMAGE_NAME: cnb-app
+  SERVICE_VERSION: '6.0'
+  SERVICE_PORT: 6379 # Default value: 27017
+  SERVICE_USERNAME: '22032e25-4aba-417f-a394-8bbd78d920cd'
+  SERVICE_PASSWORD: 'StbQ4EovUpwQjD0cT1Hr7PKBG'
+  DATABASE_NAME: my-redis-db
+
+jobs:
+  package-app:
+    name: "Package ${{ github.repository }} as CNB app"
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        # Docker Hub image
+        image: redis
+        # Set health checks to wait until redis has started
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          # Maps port 6379 on service container to the host
+          - 6379:6379
+    steps:
+      -
+        uses: actions/checkout@44c2b7a8a4ea60a981eaca3cf939b5f4305c123b # v4.1.5
+        with:
+          # Number of commits to fetch. 0 indicates all history for all branches and tags.
+          # Default: 1
+          fetch-depth: 1
+      -
+        name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Setup pack for ${{ github.repository }}
+        uses: buildpacks/github-actions/setup-pack@v5.0.0
+#      -
+#        name: Start MongoDB testing server
+#        uses: supercharge/mongodb-github-action@1.11.0
+#        with:
+#          mongodb-version: ${{ env.SERVICE_VERSION }}
+#          mongodb-port: ${{env.SERVICE_PORT}}
+#          mongodb-username: ${{env.SERVICE_USERNAME}}
+#          mongodb-password: ${{env.SERVICE_PASSWORD}}
+#          mongodb-db: ${{env.DATABASE_NAME}}
+#          mongodb-container-name: mongodb-${{ env.SERVICE_VERSION }}
+
+      -
+        name: Packaging app from ${{ github.repository }} pushed by ${{ github.actor }}
+        shell: bash
+        run: |
+          echo "Pack Build ${{env.CNB_IMAGE_NAME}} (${{github.repository}})"
+          pack build ${{env.CNB_IMAGE_NAME}} --builder heroku/builder:24
+          echo "Pack Inspect ${{env.CNB_IMAGE_NAME}} (${{github.repository}})"
+          pack inspect ${{env.CNB_IMAGE_NAME}}
+      -
+        name: Testing app
+        shell: bash
+        run: |
+          cat vcap-services-template.sh|envsubst >vcap-service.env
+          cat vcap-service.env
+          echo "Starting sample app"
+          container_id=$(docker run -d -e PORT=80 --env-file vcap-service.env -p 8080:80 --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
+          echo "Cnb app started (id: $container_id)"
+          docker inspect -f '{{.HostConfig.LogConfig.Type}}' $container_id 
+          # docker run   -e PORT=80 --env-file vcap-service.env -p 8080:80 --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}}
+          docker logs -f cnb-app-container &> cnb-app-container.log &
+          docker ps -a
+          env|sort
+          export APP="http://127.0.0.1:8080"
+          exit_status=0
+          if nc -vz 127.0.0.1 8080;then echo "port 8080 available";else echo "port 8080 UNAVAILABLE";exit_status=1;fi                    
+          if nc -vz 127.0.0.1 ${SERVICE_PORT};then echo "port ${SERVICE_PORT} available";else echo "port ${SERVICE_PORT} UNAVAILABLE";exit_status=1;fi                    
+          echo "Create using > curl -X PUT $APP/foo -d 'data=bar' <"
+          if ! curl -vvv -X PUT $APP/foo -d 'data=bar';then
+            echo "Create failed"
+            exit_status=1
+          else
+            echo "Create successful"
+          fi
+          echo "Delete using 'curl -X DELETE $APP/foo'"
+          if ! curl -vvv -X DELETE $APP/foo;then
+            echo "Delete failed"
+            exit_status=1
+          else
+            echo "Delete successful"
+          fi
+          echo "Dumping logs using docker logs cnb-app-container"
+          docker logs cnb-app-container
+          ls -lrt
+          exit $exit_status
+      -
+        name: Tag version ${{github.ref_name}}
+        if: github.ref_type == 'tag'
+        run: |
+          docker tag ${{env.CNB_IMAGE_NAME}}:latest ghcr.io/${{ github.repository }}:${{github.ref_name}}
+      -
+        name: Tag with common data
+        run: |
+          docker tag ${{env.CNB_IMAGE_NAME}}:latest ghcr.io/${{ github.repository }}:latest
+          docker tag ${{env.CNB_IMAGE_NAME}}:latest ghcr.io/${{ github.repository }}:${{github.sha}}
+          echo "cleanup built image"
+          docker image rm ${{env.CNB_IMAGE_NAME}}:latest
+          echo "dump existing images"
+          docker images
+      -
+        name: Publish ghcr.io/${{ github.repository }}
+        run: |
+          echo "publish all tags"
+          docker push --all-tags ghcr.io/${{ github.repository }}
+          
+          
