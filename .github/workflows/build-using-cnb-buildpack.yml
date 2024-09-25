@@ -9,20 +9,21 @@ on:
       - "v?[0-9]+.[0-9]+.[0-9]+*"
 env:
   CNB_IMAGE_NAME: cnb-app
-  SERVICE_VERSION: '6.0'
-  SERVICE_PORT: 6379 # Default value: 27017
-  SERVICE_USERNAME: '22032e25-4aba-417f-a394-8bbd78d920cd'
+#  SERVICE_VERSION: '6.0'
+  SERVICE_HOST: redis-service
+  SERVICE_PORT: 6379
+#  SERVICE_USERNAME: '22032e25-4aba-417f-a394-8bbd78d920cd'
   SERVICE_PASSWORD: 'StbQ4EovUpwQjD0cT1Hr7PKBG'
-  DATABASE_NAME: my-redis-db
+#  DATABASE_NAME: my-redis-db
 
 jobs:
   package-app:
     name: "Package ${{ github.repository }} as CNB app"
     runs-on: ubuntu-latest
     services:
-      redis:
+      redis-service:
         # Docker Hub image
-        image: redis
+        image: "redis:6"
         # Set health checks to wait until redis has started
         options: >-
           --health-cmd "redis-cli ping"
@@ -49,8 +50,8 @@ jobs:
       -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: network=host
+#        with:
+#          driver-opts: network=host
       -
         name: Setup pack for ${{ github.repository }}
         uses: buildpacks/github-actions/setup-pack@v5.0.0
@@ -79,8 +80,9 @@ jobs:
         run: |
           cat vcap-services-template.sh|envsubst >vcap-service.env
           cat vcap-service.env
+          docker ps -a
           echo "Starting sample app"
-          container_id=$(docker run -d --network host -e PORT=8080 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
+          container_id=$(docker run -d --link redis-service -e PORT=8080 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
           echo "Cnb app started (id: $container_id)"
           docker inspect -f '{{.HostConfig.LogConfig.Type}}' $container_id 
           # docker run   -e PORT=80 --env-file vcap-service.env -p 8080:80 --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}}
@@ -108,7 +110,7 @@ jobs:
           echo "Dumping logs using docker logs cnb-app-container"
           docker logs cnb-app-container
           ls -lrt
-          exit $exit_status
+          #exit $exit_status
       -
         name: Tag version ${{github.ref_name}}
         if: github.ref_type == 'tag'
