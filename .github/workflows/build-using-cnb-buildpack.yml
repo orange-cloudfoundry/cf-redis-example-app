@@ -74,6 +74,10 @@ jobs:
           echo "Pack Inspect ${{env.CNB_IMAGE_NAME}} (${{github.repository}})"
           pack inspect ${{env.CNB_IMAGE_NAME}}
       -
+        name: Install redis tools
+        run: sudo apt-get install -y redis-tools
+
+      -
         name: Testing app
         shell: bash
         run: |
@@ -88,6 +92,8 @@ jobs:
           #container_id=$(docker run -d --link $redis_container_name -e PORT=8080 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
           container_id=$(docker run -d -e PORT=80 -p 8080:80 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
           echo "Cnb app started (id: $container_id)"
+          echo "Waiting to ensure app is up and running"
+          sleep 5
           #docker inspect -f '{{.HostConfig.LogConfig.Type}}' $container_id 
           #docker run   -e PORT=80 --env-file vcap-service.env -p 8080:80 --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}}
           
@@ -96,8 +102,11 @@ jobs:
           #env|sort
           export APP="http://127.0.0.1:8080"
           exit_status=0
+
           if nc -vz 127.0.0.1 8080;then echo "port 8080 available";else echo "port 8080 UNAVAILABLE";exit_status=1;fi                    
-          if nc -vz 127.0.0.1 ${SERVICE_PORT};then echo "port ${SERVICE_PORT} available";else echo "port ${SERVICE_PORT} UNAVAILABLE";exit_status=1;fi                    
+          if nc -vz 127.0.0.1 ${SERVICE_PORT};then echo "port ${SERVICE_PORT} available";else echo "port ${SERVICE_PORT} UNAVAILABLE";exit_status=1;fi
+          echo "Checking redis server: PING ==> $(redis-cli -h 127.0.0.1 -p ${SERVICE_PORT} ping)"
+
           echo "Create using > curl -X PUT $APP/foo -d 'data=bar' <"
           if ! curl -vvv -X PUT $APP/foo -d 'data=bar';then
             echo "Create failed"
