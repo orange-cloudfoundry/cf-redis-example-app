@@ -10,6 +10,7 @@ on:
 env:
   CNB_IMAGE_NAME: cnb-app
 #  SERVICE_VERSION: '6.0'
+  SERVICE_IMAGE: "redis:6"
   SERVICE_HOST: redis-service
   SERVICE_PORT: 6379
 #  SERVICE_USERNAME: '22032e25-4aba-417f-a394-8bbd78d920cd'
@@ -23,7 +24,7 @@ jobs:
     services:
       redis-service:
         # Docker Hub image
-        image: "redis:6"
+        image: redis:6
         # Set health checks to wait until redis has started
         options: >-
           --health-cmd "redis-cli ping"
@@ -71,7 +72,7 @@ jobs:
         shell: bash
         run: |
           echo "Pack Build ${{env.CNB_IMAGE_NAME}} (${{github.repository}})"
-          pack build ${{env.CNB_IMAGE_NAME}} --builder heroku/builder:24
+          pack build ${{env.CNB_IMAGE_NAME}} --builder paketobuildpacks/builder-jammy-base
           echo "Pack Inspect ${{env.CNB_IMAGE_NAME}} (${{github.repository}})"
           pack inspect ${{env.CNB_IMAGE_NAME}}
       -
@@ -81,10 +82,11 @@ jobs:
           cat vcap-services-template.sh|envsubst >vcap-service.env
           cat vcap-service.env
           docker ps -a
-          echo "Starting sample app"
-          container_id=$(docker run -d --link redis-service -e PORT=8080 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
+          redis_container_name="$(docker ps -f "ancestor=$SERVICE_IMAGE" --format "{{.Names}}")"
+          echo "Starting sample app (linked with $redis_container_name)"
+          container_id=$(docker run -d --link $redis_container_name -e PORT=8080 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
           echo "Cnb app started (id: $container_id)"
-          docker inspect -f '{{.HostConfig.LogConfig.Type}}' $container_id 
+          #docker inspect -f '{{.HostConfig.LogConfig.Type}}' $container_id 
           # docker run   -e PORT=80 --env-file vcap-service.env -p 8080:80 --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}}
           docker logs -f cnb-app-container &> cnb-app-container.log &
           docker ps -a
