@@ -51,8 +51,6 @@ jobs:
       -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-#        with:
-#          driver-opts: network=host
       -
         name: Setup pack for ${{ github.repository }}
         uses: buildpacks/github-actions/setup-pack@v5.0.0
@@ -83,16 +81,19 @@ jobs:
           cat vcap-service.env
           docker ps -a
           redis_container_name="$(docker ps -f "ancestor=$SERVICE_IMAGE" --format "{{.Names}}")"
-          docker inspect $redis_container_name
+          #docker inspect $redis_container_name
+          #echo "Dumping /etc/ssl/certs"
+          #docker run --rm -i --entrypoint "/bin/bash" ${{env.CNB_IMAGE_NAME}} "-c" "ls -l /etc/ssl/certs"
           echo "Starting sample app"
-          # container_id=$(docker run -d --link $redis_container_name -e PORT=8080 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
-          container_id=$(docker run -d -e PORT=8080 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
+          #container_id=$(docker run -d --link $redis_container_name -e PORT=8080 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
+          container_id=$(docker run -d -e PORT=80 -p 8080:80 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
           echo "Cnb app started (id: $container_id)"
           #docker inspect -f '{{.HostConfig.LogConfig.Type}}' $container_id 
-          # docker run   -e PORT=80 --env-file vcap-service.env -p 8080:80 --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}}
-          docker logs -f cnb-app-container &> cnb-app-container.log &
+          #docker run   -e PORT=80 --env-file vcap-service.env -p 8080:80 --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}}
+          
+          docker logs -f cnb-app-container 2>&1 > cnb-app-container.log &
           docker ps -a
-          # env|sort
+          #env|sort
           export APP="http://127.0.0.1:8080"
           exit_status=0
           if nc -vz 127.0.0.1 8080;then echo "port 8080 available";else echo "port 8080 UNAVAILABLE";exit_status=1;fi                    
@@ -112,7 +113,7 @@ jobs:
             echo "Delete successful"
           fi
           echo "Dumping logs using docker logs cnb-app-container"
-          docker logs cnb-app-container
+          docker logs cnb-app-container 2>&1
           ls -lrt
           #exit $exit_status
       -

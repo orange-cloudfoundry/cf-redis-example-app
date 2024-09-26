@@ -1,0 +1,17 @@
+[_]
+schema-version = "0.2"
+id = "com.orange-cloudfoundry.sample-apps.redis"
+name = "Redis sample app"
+#version = "1.0.0"
+
+[io.buildpacks]
+builder = "paketobuildpacks/builder-jammy-base"
+exclude = [
+    ".github",
+    ".travis.yml",
+    "renovate.json",
+    "README.md"
+]
+#[[io.buildpacks.build.env]]
+#name = "BP_ENABLE_RUNTIME_CERT_BINDING"
+#value = "false"
