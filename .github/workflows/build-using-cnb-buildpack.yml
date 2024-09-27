@@ -11,29 +11,30 @@ env:
   CNB_IMAGE_NAME: cnb-app
 #  SERVICE_VERSION: '6.0'
   SERVICE_IMAGE: "redis:6"
-  SERVICE_HOST: redis-service
+  SERVICE_HOST: 172.17.0.3 #localhost #redis-service
   SERVICE_PORT: 6379
 #  SERVICE_USERNAME: '22032e25-4aba-417f-a394-8bbd78d920cd'
   SERVICE_PASSWORD: 'StbQ4EovUpwQjD0cT1Hr7PKBG'
 #  DATABASE_NAME: my-redis-db
+  DEBUG: 0
 
 jobs:
   package-app:
     name: "Package ${{ github.repository }} as CNB app"
     runs-on: ubuntu-latest
-    services:
-      redis-service:
-        # Docker Hub image
-        image: redis:6
+#    services:
+#      redis-service:
+#         Docker Hub image
+#        image: redis:6
         # Set health checks to wait until redis has started
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
+#        options: >-
+#          --health-cmd "redis-cli ping"
+#          --health-interval 10s
+#          --health-timeout 5s
+#          --health-retries 5
+#        ports:
           # Maps port 6379 on service container to the host
-          - 6379:6379
+#          - 6379:6379
     steps:
       -
         uses: actions/checkout@44c2b7a8a4ea60a981eaca3cf939b5f4305c123b # v4.1.5
@@ -76,55 +77,88 @@ jobs:
       -
         name: Install redis tools
         run: sudo apt-get install -y redis-tools
-
       -
         name: Testing app
         shell: bash
         run: |
-          cat vcap-services-template.sh|envsubst >vcap-service.env
+          ./setup-prerequisite.sh # 
+          
+          ./vcap-services-template-reformat.sh
           cat vcap-service.env
-          docker ps -a
-          redis_container_name="$(docker ps -f "ancestor=$SERVICE_IMAGE" --format "{{.Names}}")"
-          #docker inspect $redis_container_name
-          #echo "Dumping /etc/ssl/certs"
-          #docker run --rm -i --entrypoint "/bin/bash" ${{env.CNB_IMAGE_NAME}} "-c" "ls -l /etc/ssl/certs"
           echo "Starting sample app"
-          #container_id=$(docker run -d --link $redis_container_name -e PORT=8080 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
-          container_id=$(docker run -d -e PORT=80 -p 8080:80 --env-file vcap-service.env --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}})
+          container_name="cnb-app-container"
+          container_id=$(docker run -d -e PORT=80 -p 8080:80 --env-file vcap-service.env --name "$container_name" ${CNB_IMAGE_NAME})
+                    
           echo "Cnb app started (id: $container_id)"
           echo "Waiting to ensure app is up and running"
-          sleep 5
-          #docker inspect -f '{{.HostConfig.LogConfig.Type}}' $container_id 
-          #docker run   -e PORT=80 --env-file vcap-service.env -p 8080:80 --name "cnb-app-container" ${{env.CNB_IMAGE_NAME}}
-          
-          docker logs -f cnb-app-container 2>&1 > cnb-app-container.log &
-          docker ps -a
-          #env|sort
-          export APP="http://127.0.0.1:8080"
-          exit_status=0
+          while [ "$( docker container inspect -f '{{.State.Status}}' $container_name )" != "running" ]; do 
+            echo "waiting for $container_name to be running current: $(docker inspect -f '{{.State.Status}}' $container_name)"
+            sleep 1
+          done
+          sleep 3 # to ensure app is up and running
+          #docker inspect -f '{{.HostConfig.LogConfig.Type}}' $container_id
+          redis_container_name="$(docker ps -f "ancestor=$SERVICE_IMAGE" --format "{{.Names}}")"
+          CONTAINER_APP_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $container_name)
+          echo "CONTAINER_APP_IP: $CONTAINER_APP_IP"
 
+          if [ $DEBUG -eq 1 ]; then
+            echo "----------------- $container_name --------------------"
+            docker inspect -f '{{json .NetworkSettings}}' $container_name
+            
+            echo "----------------- $redis_container_name --------------------"
+            docker inspect -f '{{json .NetworkSettings}}' $redis_container_name
+          fi
+          echo "=== Redirect logs to cnb-app-container.log ==="
+          docker logs -f cnb-app-container &> cnb-app-container.log &
+          docker ps -a
+          
+          echo "=== Check connectivity ==="
           if nc -vz 127.0.0.1 8080;then echo "port 8080 available";else echo "port 8080 UNAVAILABLE";exit_status=1;fi                    
           if nc -vz 127.0.0.1 ${SERVICE_PORT};then echo "port ${SERVICE_PORT} available";else echo "port ${SERVICE_PORT} UNAVAILABLE";exit_status=1;fi
-          echo "Checking redis server: PING ==> $(redis-cli -h 127.0.0.1 -p ${SERVICE_PORT} ping)"
+          echo "Checking redis server 127.0.0.1 : PING ==> $(redis-cli -a ${SERVICE_PASSWORD} -h 127.0.0.1 -p ${SERVICE_PORT} --no-auth-warning ping)"
+          echo "Checking redis server $SERVICE_HOST : PING ==> $(redis-cli -a ${SERVICE_PASSWORD} -h ${SERVICE_HOST} -p ${SERVICE_PORT} --no-auth-warning ping)"
 
-          echo "Create using > curl -X PUT $APP/foo -d 'data=bar' <"
-          if ! curl -vvv -X PUT $APP/foo -d 'data=bar';then
-            echo "Create failed"
-            exit_status=1
-          else
-            echo "Create successful"
-          fi
-          echo "Delete using 'curl -X DELETE $APP/foo'"
-          if ! curl -vvv -X DELETE $APP/foo;then
-            echo "Delete failed"
-            exit_status=1
-          else
-            echo "Delete successful"
-          fi
+          function check_service() {
+            type="$1"
+            cmd="$2"
+            status=0
+            echo "$type using > $cmd <"  1>&2 
+            if $cmd;then
+              echo ""  1>&2 
+              echo "$type failed"  1>&2 
+              status=1
+            else
+              echo ""  1>&2  
+              echo "$type successful" 1>&2 
+            fi
+            echo "check_service - status: $status" 1>&2 
+            return $status
+          }
+          export APP="http://127.0.0.1:8080"
+          set +e
+          exit_status=0
+          create_service_output="$(check_service "Create" "curl -sSLf -X PUT $APP/foo -d data=bar" )"
+          create_service=$?
+          
+          get_service_output="$(check_service "Get" "curl -sSLf -X GET $APP/foo" )"
+          get_service=$?
+          
+          delete_service_output="$(check_service "Delete" "curl -vvv -sSL -X DELETE $APP/foo" )"
+          delete_service=$?
+          set -e
+          
+          echo "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+          echo "create_service: $create_service"
+          echo "get_service: $get_service"
+          echo "create_service: $create_service"
+          exit_status=$(($create_service + $get_service + $delete_service))
+          echo "exit status: $exit_status"          
+          echo "==================================================="
+          echo "==================================================="
           echo "Dumping logs using docker logs cnb-app-container"
           docker logs cnb-app-container 2>&1
-          ls -lrt
-          #exit $exit_status
+          ls -lrt *.log
+          exit $exit_status
       -
         name: Tag version ${{github.ref_name}}
         if: github.ref_type == 'tag'

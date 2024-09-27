@@ -1,4 +1,3 @@
-VCAP_SERVICES='
 {
   "redis-dedicated":[
     {
@@ -23,8 +22,4 @@ VCAP_SERVICES='
       "volume_mounts":[]
     }
   ]
-
 }
-
-
-'

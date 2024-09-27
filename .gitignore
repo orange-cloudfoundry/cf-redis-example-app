@@ -3,3 +3,4 @@ dump.rdb
 redis.log
 .idea
 *.iml
+/vcap-service.env
