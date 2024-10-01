@@ -9,6 +9,7 @@ GEM
     mustermann (3.0.0)
       ruby2_keywords (~> 0.0.1)
     openssl (3.1.0)
+    ostruct (0.6.0)
     rack (2.2.6.4)
     rack-protection (3.0.6)
       rack
@@ -49,6 +50,7 @@ PLATFORMS
 DEPENDENCIES
   cf-app-utils
   childprocess
+  ostruct (~> 0.6.0)
   rack-test
   redis
   rspec
